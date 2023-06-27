@@ -3,12 +3,13 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(
     ChangeNotifierProvider<ThemeModeNotifier>(
       create: (_) => ThemeModeNotifier(),
-      child: MyApp(),
+      child: MyBooks(),
     ),
   );
 }
@@ -24,7 +25,7 @@ class ThemeModeNotifier extends ChangeNotifier {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyBooks extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Consumer<ThemeModeNotifier>(
@@ -57,6 +58,7 @@ class Book {
   String rating;
   String desc;
   String price;
+  bool isDownloaded;
 
   Book({
     required this.title,
@@ -73,6 +75,7 @@ class Book {
     required this.rating,
     required this.desc,
     required this.price,
+    required this.isDownloaded,
   });
 }
 
@@ -90,6 +93,7 @@ class _BookListScreenState extends State<BookListScreen> {
   void initState() {
     super.initState();
     fetchBooks();
+    setDownloadStatus();
   }
 
   Future<void> fetchBooks() async {
@@ -98,6 +102,7 @@ class _BookListScreenState extends State<BookListScreen> {
 
     if (response.statusCode == 200) {
       final jsonData = json.decode(response.body);
+      print(response.body);
 
       setState(() {
         final bookList = jsonData['books'] as List<dynamic>;
@@ -118,6 +123,7 @@ class _BookListScreenState extends State<BookListScreen> {
                   rating: '',
                   desc: '',
                   price: '',
+                  isDownloaded: false,
                 ))
             .toList();
 
@@ -139,6 +145,7 @@ class _BookListScreenState extends State<BookListScreen> {
 
     if (response.statusCode == 200) {
       final jsonData = json.decode(response.body);
+      print(response.body);
 
       setState(() {
         book.authors = jsonData['authors'];
@@ -161,6 +168,42 @@ class _BookListScreenState extends State<BookListScreen> {
       });
       throw Exception('Gagal mengambil data');
     }
+  }
+
+  void setDownloadStatus() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String>? downloadedBooks = prefs.getStringList('downloaded_books');
+
+    if (downloadedBooks != null) {
+      for (final book in books) {
+        if (downloadedBooks.contains(book.title)) {
+          setState(() {
+            book.isDownloaded = true;
+          });
+        }
+      }
+    }
+  }
+
+  void toggleDownloadStatus(Book book) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String>? downloadedBooks = prefs.getStringList('downloaded_books');
+
+    if (downloadedBooks == null) {
+      downloadedBooks = [];
+    }
+
+    setState(() {
+      if (book.isDownloaded) {
+        book.isDownloaded = false;
+        downloadedBooks?.remove(book.title);
+      } else {
+        book.isDownloaded = true;
+        downloadedBooks?.add(book.title);
+      }
+    });
+
+    prefs.setStringList('downloaded_books', downloadedBooks);
   }
 
   void filterBooks(String query) {
@@ -211,139 +254,43 @@ class _BookListScreenState extends State<BookListScreen> {
               itemCount: filteredBooks.length,
               itemBuilder: (context, index) {
                 final book = filteredBooks[index];
-                return ListTile(
-                  leading: CachedNetworkImage(
-                    imageUrl: book.image,
-                    placeholder: (context, url) => CircularProgressIndicator(),
-                    errorWidget: (context, url, error) => Icon(Icons.error),
-                  ),
-                  title: Text(book.title),
-                  subtitle: Text(book.subtitle),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => BookDetailScreen(
-                          book: book,
-                          themeModeNotifier: context.read<ThemeModeNotifier>(),
-                        ),
+                return Card(
+                  child: ListTile(
+                    leading: CachedNetworkImage(
+                      imageUrl: book.image,
+                      placeholder: (context, url) =>
+                          CircularProgressIndicator(),
+                      errorWidget: (context, url, error) =>
+                          Icon(Icons.error),
+                    ),
+                    title: Text(book.title),
+                    subtitle: Text(book.subtitle),
+                    trailing: IconButton(
+                      icon: Icon(
+                        book.isDownloaded ? Icons.check : Icons.download,
                       ),
-                    );
-                  },
+                      onPressed: () {
+                        toggleDownloadStatus(book);
+                      },
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => BookDetailScreen(
+                            book: book,
+                            themeModeNotifier: context.read<ThemeModeNotifier>(),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 );
               },
             )
           : Center(
               child: CircularProgressIndicator(),
             ),
-    );
-  }
-}
-
-class BookDetailScreen extends StatelessWidget {
-  final Book book;
-  final ThemeModeNotifier themeModeNotifier;
-
-  const BookDetailScreen({
-    required this.book,
-    required this.themeModeNotifier,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Detail Buku'),
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CachedNetworkImage(
-              imageUrl: book.image,
-              placeholder: (context, url) => CircularProgressIndicator(),
-              errorWidget: (context, url, error) => Icon(Icons.error),
-            ),
-            SizedBox(height: 16.0),
-            Text(
-              book.title,
-              style: TextStyle(
-                fontSize: 24.0,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              book.subtitle,
-              style: TextStyle(
-                fontSize: 16.0,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 16.0),
-            Text(
-              'Authors: ${book.authors}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'Publisher: ${book.publisher}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'Language: ${book.language}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'ISBN-10: ${book.isbn10}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'ISBN-13: ${book.isbn13}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'Pages: ${book.pages}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'Year: ${book.year}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'Rating: ${book.rating}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'Description: ${book.desc}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'Price: ${book.price}',
-              style: TextStyle(fontSize: 16.0),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          if (themeModeNotifier.themeMode == ThemeMode.light) {
-            themeModeNotifier.themeMode = ThemeMode.dark;
-          } else {
-            themeModeNotifier.themeMode = ThemeMode.light;
-          }
-        },
-        child: Icon(Icons.brightness_4),
-      ),
     );
   }
 }
@@ -370,24 +317,7 @@ class BookSearchDelegate extends SearchDelegate<Book> {
     return IconButton(
       icon: Icon(Icons.arrow_back),
       onPressed: () {
-        close(
-          context,
-          Book(
-              title: '',
-              subtitle: '',
-              image: '',
-              url: '',
-              authors: '',
-              publisher: '',
-              language: '',
-              isbn10: '',
-              isbn13: '',
-              pages: '',
-              year: '',
-              rating: '',
-              desc: '',
-              price: ''),
-        );
+        close(context, null!);
       },
     );
   }
@@ -436,6 +366,93 @@ class BookSearchDelegate extends SearchDelegate<Book> {
           },
         );
       },
+    );
+  }
+}
+
+class BookDetailScreen extends StatelessWidget {
+  final Book book;
+  final ThemeModeNotifier themeModeNotifier;
+
+  BookDetailScreen({
+    required this.book,
+    required this.themeModeNotifier,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Detail Buku'),
+        actions: [
+          IconButton(
+            icon: Icon(
+              themeModeNotifier.themeMode == ThemeMode.light
+                  ? Icons.lightbulb_outline
+                  : Icons.lightbulb,
+            ),
+            onPressed: () {
+              final newThemeMode = themeModeNotifier.themeMode == ThemeMode.light
+                  ? ThemeMode.dark
+                  : ThemeMode.light;
+              themeModeNotifier.themeMode = newThemeMode;
+            },
+          ),
+        ],
+      ),
+      body: ListView(
+        children: [
+          CachedNetworkImage(
+            imageUrl: book.image,
+            placeholder: (context, url) => CircularProgressIndicator(),
+            errorWidget: (context, url, error) => Icon(Icons.error),
+          ),
+          ListTile(
+            title: Text(book.title),
+            subtitle: Text(book.subtitle),
+          ),
+          ListTile(
+            title: Text('Authors'),
+            subtitle: Text(book.authors),
+          ),
+          ListTile(
+            title: Text('Publisher'),
+            subtitle: Text(book.publisher),
+          ),
+          ListTile(
+            title: Text('Language'),
+            subtitle: Text(book.language),
+          ),
+          ListTile(
+            title: Text('ISBN-10'),
+            subtitle: Text(book.isbn10),
+          ),
+          ListTile(
+            title: Text('ISBN-13'),
+            subtitle: Text(book.isbn13),
+          ),
+          ListTile(
+            title: Text('Pages'),
+            subtitle: Text(book.pages),
+          ),
+          ListTile(
+            title: Text('Year'),
+            subtitle: Text(book.year),
+          ),
+          ListTile(
+            title: Text('Rating'),
+            subtitle: Text(book.rating),
+          ),
+          ListTile(
+            title: Text('Description'),
+            subtitle: Text(book.desc),
+          ),
+          ListTile(
+            title: Text('Price'),
+            subtitle: Text(book.price),
+          ),
+        ],
+      ),
     );
   }
 }
